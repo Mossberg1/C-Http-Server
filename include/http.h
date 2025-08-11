@@ -2,9 +2,13 @@
 #define HTTP_H
 
 
+#define HTTP_METHOD_MAXSIZE 8
+#define HTTP_PATH_MAXSIZE   256
+
+
 struct http_request {
-    char method[8];
-    char path[256];
+    char method[HTTP_METHOD_MAXSIZE];
+    char path[HTTP_PATH_MAXSIZE];
 };
 
 

@@ -2,3 +2,6 @@ compile_commands.json
 .cache/
 build/*
 bin/*
+.vscode
+test/
+.idea/

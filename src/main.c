@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -6,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 #include "http.h"
 
@@ -13,6 +15,20 @@
 #define PORT_NUMBER 8080
 #define BACKLOG 10
 #define BUFFER_SIZE 1024
+
+
+char* root_directory = "/Users/mossberg/repos/c_webserver/test";
+char* favicon_path = "/Users/mossberg/repos/c_webserver/static/favicon.ico";
+
+const char* notfound_response = 
+    "HTTP/1.1 404 Not Found\r\n"
+    "Content-Length: 0\r\n"
+    "\r\n";
+
+const char* forbidden_response = 
+    "HTTP/1.1 403 Forbidden\r\n"
+    "Content-Length: 0\r\n"
+    "\r\n";
 
 
 int main(void) {
@@ -23,6 +39,9 @@ int main(void) {
         perror("socket");
         return -1;
     }
+
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
@@ -63,18 +82,31 @@ int main(void) {
             continue;
         }
 
-        printf("Metod: %s, Sökväg: %s\n", request.method, request.path);
+        size_t path_length = strlen(root_directory) + strlen(request.path) + 1;
+        char path[path_length];
+
+        strlcpy(path, root_directory, path_length);
+        strlcat(path, request.path, path_length);
+
+        // Skydda mot Directory Traversal
+        char resolved_path[HTTP_PATH_MAXSIZE];
+        if (realpath(path, resolved_path) == NULL) {
+            send(client_fd, notfound_response, strlen(notfound_response), 0);
+            close(client_fd);
+            continue;
+        }
+
+        if (strncmp(resolved_path, root_directory, strlen(root_directory)) != 0) {
+            send(client_fd, forbidden_response, strlen(forbidden_response), 0);
+            close(client_fd);
+            continue;
+        }
 
         // Om webläsaren förfrågar en favicon, skicka den sen gå vidare till nästa request.
         if (strcmp(request.method, "GET") == 0 && strcmp(request.path, "/favicon.ico") == 0) {
             // Öppna favicon fil.
-            int favicon_fd = open("static/favicon.ico", O_RDONLY);
+            int favicon_fd = open(favicon_path, O_RDONLY);
             if (favicon_fd == -1) {
-                const char* notfound_response = 
-                    "HTTP/1.1 404 Not Found\r\n"
-                    "Content-Length: 0\r\n"
-                    "\r\n";
-
                 send(client_fd, notfound_response, strlen(notfound_response), 0);
                 close(client_fd);
                 continue;
@@ -106,6 +138,29 @@ int main(void) {
 
             close(client_fd);
             continue;
+        }
+
+        if (strcmp(request.method, "GET") == 0) {
+            struct dirent* directory_entry;
+            const bool is_root = strcmp(resolved_path, root_directory) == 0;
+
+            DIR* directory = opendir(resolved_path);
+            if (directory) {
+                while ((directory_entry = readdir(directory)) != NULL) {
+                    if (strcmp(directory_entry->d_name, ".") == 0) {
+                        continue;
+                    }
+
+                    if (is_root && strcmp(directory_entry->d_name, "..") == 0) {
+                        continue;
+                    }
+
+                    printf("%s\n", directory_entry->d_name);
+                }
+
+                printf("\n");
+                closedir(directory);
+            }
         }
 
         const char *response =
