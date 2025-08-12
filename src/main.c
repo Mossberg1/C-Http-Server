@@ -15,10 +15,11 @@
 #define PORT_NUMBER 8080
 #define BACKLOG 10
 #define BUFFER_SIZE 1024
+#define HTML_DOCUMENT_MAXSIZE 5000
 
 
-char* root_directory = "/Users/mossberg/repos/c_webserver/test";
-char* favicon_path = "/Users/mossberg/repos/c_webserver/static/favicon.ico";
+char* root_directory = "/home/mossberg/repos/C-Http-Server/static"; //"/Users/mossberg/repos/c_webserver/static";
+char* favicon_path = "/home/mossberg/repos/C-Http-Server/static/favicon.ico";//"/Users/mossberg/repos/c_webserver/static/favicon.ico";
 
 const char* notfound_response = 
     "HTTP/1.1 404 Not Found\r\n"
@@ -29,6 +30,9 @@ const char* forbidden_response =
     "HTTP/1.1 403 Forbidden\r\n"
     "Content-Length: 0\r\n"
     "\r\n";
+
+const char* html_start = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Directory Listing</title><style>body { font-family: Arial, sans-serif; }h1 { border-bottom: 1px solid #ccc; }ul { list-style-type: none; padding: 0; }li { margin: 5px 0; }a { text-decoration: none; color: #0066cc; }a:hover { text-decoration: underline; }</style></head><body>";
+const char* html_end = "</body></html>";
 
 
 int main(void) {
@@ -85,8 +89,8 @@ int main(void) {
         size_t path_length = strlen(root_directory) + strlen(request.path) + 1;
         char path[path_length];
 
-        strlcpy(path, root_directory, path_length);
-        strlcat(path, request.path, path_length);
+        strncpy(path, root_directory, path_length);
+        strncat(path, request.path, path_length);
 
         // Skydda mot Directory Traversal
         char resolved_path[HTTP_PATH_MAXSIZE];
@@ -146,6 +150,13 @@ int main(void) {
 
             DIR* directory = opendir(resolved_path);
             if (directory) {
+                // Skapa början av HTML dokumentet.
+                char html_document[HTML_DOCUMENT_MAXSIZE];
+                size_t offset = 0;
+
+                offset += snprintf(html_document + offset, HTML_DOCUMENT_MAXSIZE - offset, "%s", html_start);
+                offset += snprintf(html_document + offset, HTML_DOCUMENT_MAXSIZE - offset, "<h1>%s</h1><ul>", resolved_path);
+
                 while ((directory_entry = readdir(directory)) != NULL) {
                     if (strcmp(directory_entry->d_name, ".") == 0) {
                         continue;
@@ -155,22 +166,37 @@ int main(void) {
                         continue;
                     }
 
-                    printf("%s\n", directory_entry->d_name);
+                    // Rendera till HTML dokument.
+                    offset += snprintf(
+                        html_document + offset, 
+                        HTML_DOCUMENT_MAXSIZE - offset, 
+                        "<li><a href=\"%s/%s\">%s</a></li>",
+                        resolved_path, directory_entry->d_name, directory_entry->d_name
+                    );
+
+                    if (offset >= HTML_DOCUMENT_MAXSIZE - 100) {
+                        break;
+                    }
                 }
 
-                printf("\n");
                 closedir(directory);
+
+                offset += snprintf(html_document + offset, HTML_DOCUMENT_MAXSIZE - offset, "</ul>%s", html_end);
+
+                char header[256];
+                size_t header_length = snprintf(
+                    header, sizeof(header),
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/html\r\n"
+                    "Content-Length: %zu\r\n"
+                    "\r\n",
+                    offset
+                );
+
+                send(client_fd, header, header_length, 0);
+                send(client_fd, html_document, offset, 0);
             }
         }
-
-        const char *response =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
-            "Content-Length: 22\r\n"
-            "\r\n"
-            "<h1>Hello, World!</h1>";
-        
-        send(client_fd, response, strlen(response), 0);
 
         close(client_fd);
     }
