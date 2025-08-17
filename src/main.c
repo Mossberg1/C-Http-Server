@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -18,8 +19,8 @@
 #define HTML_DOCUMENT_MAXSIZE 5000
 
 
-char* root_directory = "/home/mossberg/repos/C-Http-Server/static"; //"/Users/mossberg/repos/c_webserver/static";
-char* favicon_path = "/home/mossberg/repos/C-Http-Server/static/favicon.ico";//"/Users/mossberg/repos/c_webserver/static/favicon.ico";
+char* root_directory = "/Users/mossberg/repos/c_webserver/static";
+char* favicon_path = "/Users/mossberg/repos/c_webserver/static/favicon.ico";
 
 const char* notfound_response = 
     "HTTP/1.1 404 Not Found\r\n"
@@ -39,7 +40,7 @@ int main(void) {
     printf("Vällkommen till min webserver i C!\n");
 
     int server_fd = socket(PF_INET, SOCK_STREAM, 0);
-    if (server_fd < -1) {
+    if (server_fd == -1) {
         perror("socket");
         return -1;
     }
@@ -51,13 +52,13 @@ int main(void) {
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(PORT_NUMBER);
 
-    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < -1) {
+    if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
         perror("bind");
         close(server_fd);
         return -1;
     }
 
-    if (listen(server_fd, BACKLOG) < -1) {
+    if (listen(server_fd, BACKLOG) == -1) {
         perror("listen");
         close(server_fd);
         return -1;
@@ -73,6 +74,10 @@ int main(void) {
             perror("accept");
             continue;
         }
+
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
+        printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
 
         // Läs request.
         char buffer[BUFFER_SIZE];
@@ -94,6 +99,7 @@ int main(void) {
 
         // Skydda mot Directory Traversal
         char resolved_path[HTTP_PATH_MAXSIZE];
+        memset(resolved_path, 0, HTTP_PATH_MAXSIZE);
         if (realpath(path, resolved_path) == NULL) {
             send(client_fd, notfound_response, strlen(notfound_response), 0);
             close(client_fd);
@@ -195,6 +201,9 @@ int main(void) {
 
                 send(client_fd, header, header_length, 0);
                 send(client_fd, html_document, offset, 0);
+            }
+            else {
+                send(client_fd, notfound_response, strlen(notfound_response), 0);
             }
         }
 
