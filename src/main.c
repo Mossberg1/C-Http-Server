@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <limits.h>
+#include <errno.h>
 
 #include "http.h"
 
@@ -19,8 +21,7 @@
 #define HTML_DOCUMENT_MAXSIZE 5000
 
 
-char* root_directory = "/Users/mossberg/repos/c_webserver/static";
-char* favicon_path = "/Users/mossberg/repos/c_webserver/static/favicon.ico";
+//char* root_directory = "/Users/mossberg/repos/c_webserver/static";
 
 const char* notfound_response = 
     "HTTP/1.1 404 Not Found\r\n"
@@ -38,6 +39,9 @@ const char* html_end = "</body></html>";
 
 int main(void) {
     printf("Vällkommen till min webserver i C!\n");
+
+    char root_directory[PATH_MAX];
+    getcwd(root_directory, sizeof(root_directory));
 
     int server_fd = socket(PF_INET, SOCK_STREAM, 0);
     if (server_fd == -1) {
@@ -108,44 +112,6 @@ int main(void) {
 
         if (strncmp(resolved_path, root_directory, strlen(root_directory)) != 0) {
             send(client_fd, forbidden_response, strlen(forbidden_response), 0);
-            close(client_fd);
-            continue;
-        }
-
-        // Om webläsaren förfrågar en favicon, skicka den sen gå vidare till nästa request.
-        if (strcmp(request.method, "GET") == 0 && strcmp(request.path, "/favicon.ico") == 0) {
-            // Öppna favicon fil.
-            int favicon_fd = open(favicon_path, O_RDONLY);
-            if (favicon_fd == -1) {
-                send(client_fd, notfound_response, strlen(notfound_response), 0);
-                close(client_fd);
-                continue;
-            }
-
-            // Hämta filstorlek
-            struct stat favicon_stat;
-            fstat(favicon_fd, &favicon_stat);
-            long favicon_size = favicon_stat.st_size;
-
-            // Läs favicon till buffer
-            char favicon_buffer[favicon_size];
-            read(favicon_fd, favicon_buffer, favicon_size);
-
-            close(favicon_fd);
-
-            // Skicka favion till webbläsaren.
-            char headers[256];
-            sprintf(
-                headers,
-                "HTTP/1.1 200 OK\r\n"
-                "Content-Type: image/x-icon\r\n"
-                "Content-Length: %ld\r\n"
-                "\r\n",
-                favicon_size
-            );
-            send(client_fd, headers, strlen(headers), 0);
-            send(client_fd, favicon_buffer, favicon_size, 0);
-
             close(client_fd);
             continue;
         }
